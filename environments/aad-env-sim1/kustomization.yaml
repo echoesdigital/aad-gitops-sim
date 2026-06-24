@@ -16,8 +16,8 @@ labels:
 
 images:
   - name: web
-    newName: ghcr.io/stefanprodan/podinfo
-    newTag: 6.7.1
+    newName: nginxinc/nginx-unprivileged
+    newTag: 1.27-alpine
 
 replicas:
   - name: web
