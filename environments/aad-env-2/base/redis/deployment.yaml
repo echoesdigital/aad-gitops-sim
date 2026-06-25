@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: app
-    app.kubernetes.io/part-of: portal-banco-dev2
+    app.kubernetes.io/part-of: retry-gate
 spec:
   replicas: 1
   selector:
@@ -17,7 +17,7 @@ spec:
       labels:
         app.kubernetes.io/name: redis
         app.kubernetes.io/component: app
-        app.kubernetes.io/part-of: portal-banco-dev2
+        app.kubernetes.io/part-of: retry-gate
     spec:
       containers:
         - name: redis
@@ -25,7 +25,14 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: 6379
+          env:
+            - name: CONNECTION_STRING
+              value: ""
+            - name: HOST_INTERNO
+              value: ""
+            - name: PORTA_INTERNA
+              value: "6379"
           resources:
             requests:
               cpu: 100m
@@ -35,14 +42,7 @@ spec:
               memory: 256Mi
           securityContext:
             runAsNonRoot: true
-            runAsUser: 999
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          volumeMounts:
-            - name: vol-data
-              mountPath: /data
-      volumes:
-        - name: vol-data
-          emptyDir: {}

@@ -6,13 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: app
-    app.kubernetes.io/part-of: portal-banco-dev2
+    app.kubernetes.io/part-of: retry-gate
 spec:
   type: ClusterIP
   ports:
     - name: http
-      port: 8080
-      targetPort: 8080
+      port: 6379
+      targetPort: 6379
       protocol: TCP
   selector:
     app.kubernetes.io/name: redis

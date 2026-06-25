@@ -6,13 +6,13 @@ metadata:
   labels:
     app.kubernetes.io/name: portal
     app.kubernetes.io/component: app
-    app.kubernetes.io/part-of: portal-banco-dev2
+    app.kubernetes.io/part-of: retry-gate
 spec:
   type: LoadBalancer
   ports:
     - name: http
       port: 80
-      targetPort: 8080
+      targetPort: 9898
       protocol: TCP
   selector:
     app.kubernetes.io/name: portal
