@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+  labels:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: env-portal---banco--wizard--mqv6iqj6
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 9898
+      targetPort: 9898
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: portal
