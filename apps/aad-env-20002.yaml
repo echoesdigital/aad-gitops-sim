@@ -1,0 +1,23 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aad-env-20002
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/echoesdigital/aad-gitops-sim.git
+    targetRevision: main
+    path: environments/aad-env-20002
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: aadaad-env-20002
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
