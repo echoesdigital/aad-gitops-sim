@@ -1,0 +1,1 @@
+# keep apps/ alive so the app-of-apps source path always exists (AAD-372)
