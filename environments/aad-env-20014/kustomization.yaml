@@ -1,0 +1,24 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aad-gitopsenv-20014
+
+resources:
+  - namespace.yaml
+  - base
+
+labels:
+  - includeSelectors: false
+    pairs:
+      environment: "dev"
+      managed-by: "aad"
+
+images:
+  - name: web
+    newName: nginx
+    newTag: 1-alpine
+
+replicas:
+  - name: web
+    count: 1
