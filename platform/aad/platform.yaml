@@ -1,0 +1,707 @@
+---
+# Source: aad-platform/templates/gitops-reconcile-rbac.yaml
+# RBAC do reconcile GitOps (ADR-062): identidade que lê o status das Argo Application e dos recursos
+# do namespace do ambiente (Deployments/Services prontos, IP do LoadBalancer) pra promover o env
+# Provisioning→Ready. Read-only nos recursos do ambiente; nas Applications inclui `patch` (AAD-364)
+# pra anotar argocd.argoproj.io/refresh=hard após o push — só vale quando o AAD/agent alcança o Argo
+# por esta SA in-cluster. No piloto o agente usa kubeconfig do Vault, então o patch depende do RBAC
+# da identidade DESSE kubeconfig no cluster do Argo, não desta SA.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aad-gitops-reconcile
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+---
+# Source: aad-platform/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aad-platform-config
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+  Keycloak__Authority: ""
+  # M2M (client_credentials): ServiceAccountTokenProvider lê este ClientId pra pegar token de
+  # serviço (Environments→Models /with-secrets). O ClientSecret correspondente vai no Secret.
+  Keycloak__ServiceAccount__ClientId: "aad-service-account"
+  Vault__Address: ""
+  Temporal__Host: ""
+  Kafka__BootstrapServers: ""
+  Redis__ConnectionString: ""
+  Dns__ZoneName: ""
+  Dns__ResourceGroup: ""
+  # Toggles explícitos (modo seguro: devBypass=false, vault.useStub=false, Production).
+  Vault__UseInMemoryStub: "true"
+  Aad__Auth__DevBypass: "false"
+  Aad__Outbox__Enabled: "false"
+  # URLs downstream — a Environments API chama a Models pra resolver componentes/perfis
+  # antes de iniciar o workflow (Program.cs lê DownstreamApis:Models). BFF idem.
+  DownstreamApis__Models: "http://aad-platform-api-models"
+  DownstreamApis__Environments: "http://aad-platform-api-environments"
+  DownstreamApis__Governance: "http://aad-platform-api-governance"
+---
+# Source: aad-platform/templates/gitops-reconcile-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aad-platform-gitops-reconcile
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+# Source: aad-platform/templates/gitops-reconcile-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aad-platform-gitops-reconcile
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+subjects:
+  - kind: ServiceAccount
+    name: aad-gitops-reconcile
+    namespace: aad-platform
+roleRef:
+  kind: ClusterRole
+  name: aad-platform-gitops-reconcile
+  apiGroup: rbac.authorization.k8s.io
+---
+# Source: aad-platform/templates/api-bff-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aad-platform-api-bff
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-bff
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: api-bff
+    app.kubernetes.io/instance: aad-platform
+---
+# Source: aad-platform/templates/api-environments-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aad-platform-api-environments
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-environments
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: api-environments
+    app.kubernetes.io/instance: aad-platform
+---
+# Source: aad-platform/templates/api-governance-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aad-platform-api-governance
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-governance
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: api-governance
+    app.kubernetes.io/instance: aad-platform
+---
+# Source: aad-platform/templates/api-models-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aad-platform-api-models
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-models
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: api-models
+    app.kubernetes.io/instance: aad-platform
+---
+# Source: aad-platform/templates/portal-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: aad-platform-portal
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: portal
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: portal
+    app.kubernetes.io/instance: aad-platform
+---
+# Source: aad-platform/templates/api-bff-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-api-bff
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-bff
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-bff
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-bff
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: api-bff
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: api-bff
+          image: ghcr.io/echoesdigital/aad/api-bff:0.3.3
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # O BFF lê DownstreamApis:{Models,Environments,Governance} (HttpClientBuilder.cs).
+            # Era Services__*Api (chave errada) → base address null → 500 (AAD-167 classe).
+            - name: DownstreamApis__Models
+              value: "http://aad-platform-api-models"
+            - name: DownstreamApis__Environments
+              value: "http://aad-platform-api-environments"
+            - name: DownstreamApis__Governance
+              value: "http://aad-platform-api-governance"
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/api-environments-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-api-environments
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-environments
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-environments
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-environments
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: api-environments
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: api-environments
+          image: ghcr.io/echoesdigital/aad/api-environments:0.3.3
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/api-governance-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-api-governance
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-governance
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-governance
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-governance
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: api-governance
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: api-governance
+          image: ghcr.io/echoesdigital/aad/api-governance:0.3.3
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/api-models-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-api-models
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: api-models
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-models
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-models
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: api-models
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: api-models
+          image: ghcr.io/echoesdigital/aad/api-models:0.3.3
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/portal-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-portal
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: portal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: portal
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: portal
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: portal
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: portal
+          image: ghcr.io/echoesdigital/aad/portal:0.3.3
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          env:
+            - name: NEXT_PUBLIC_BFF_URL
+              value: "http://aad-platform-api-bff"
+            - name: NEXT_PUBLIC_KEYCLOAK_AUTHORITY
+              value: ""
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+---
+# Source: aad-platform/templates/worker-agent-cloud-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-worker-agent-cloud
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker-agent-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-agent-cloud
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-agent-cloud
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: worker-agent-cloud
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: worker-agent-cloud
+          image: ghcr.io/echoesdigital/aad/worker-agent-cloud:0.3.3
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/worker-agent-gitops-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-worker-agent-gitops
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker-agent-gitops
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-agent-gitops
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-agent-gitops
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: worker-agent-gitops
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: worker-agent-gitops
+          image: ghcr.io/echoesdigital/aad/worker-agent-gitops:0.3.3
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/worker-engine-cloud-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-worker-engine-cloud
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker-engine-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-engine-cloud
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-engine-cloud
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: worker-engine-cloud
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: worker-engine-cloud
+          image: ghcr.io/echoesdigital/aad/worker-engine-cloud:0.3.3
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+---
+# Source: aad-platform/templates/worker-temporal-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aad-platform-worker-temporal
+  namespace: aad-platform
+  labels:
+    helm.sh/chart: aad-platform-0.2.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: aad-platform
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: worker-temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker-temporal
+      app.kubernetes.io/instance: aad-platform
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker-temporal
+        app.kubernetes.io/instance: aad-platform
+        app.kubernetes.io/component: worker-temporal
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: worker-temporal
+          image: ghcr.io/echoesdigital/aad/worker-temporal:0.3.3
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: aad-platform-config
+            - secretRef:
+                name: aad-platform-secret
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 250m
+              memory: 256Mi
+---
+# Source: aad-platform/templates/hpa.yaml
+---
+---
+# Source: aad-platform/templates/hpa.yaml
