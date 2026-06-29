@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flavio-web-test
+  labels:
+    app.kubernetes.io/name: flavio-web-test
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: env-flavio-web-test-mqzpo1de
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flavio-web-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flavio-web-test
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: env-flavio-web-test-mqzpo1de
+    spec:
+      containers:
+        - name: flavio-web-test
+          image: flavio-web-test:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
