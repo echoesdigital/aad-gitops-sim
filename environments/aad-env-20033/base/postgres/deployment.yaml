@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: env-postgres---kafka-mr0pcu1s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: env-postgres---kafka-mr0pcu1s
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 190m
+              memory: 192Mi
+            limits:
+              cpu: 380m
+              memory: 384Mi
+          securityContext:
+            allowPrivilegeEscalation: false
