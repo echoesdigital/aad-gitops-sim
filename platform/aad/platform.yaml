@@ -29,12 +29,18 @@ metadata:
     app.kubernetes.io/part-of: aad-platform
     app.kubernetes.io/version: "1.0.0"
 data:
-  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_ENVIRONMENT: "Development"
   ASPNETCORE_URLS: "http://+:8080"
   Keycloak__Authority: ""
   # M2M (client_credentials): ServiceAccountTokenProvider lê este ClientId pra pegar token de
   # serviço (Environments→Models /with-secrets). O ClientSecret correspondente vai no Secret.
   Keycloak__ServiceAccount__ClientId: "aad-service-account"
+  # AAD-399: espelhar usuarios do Keycloak no admin exige o modo Real; Stub devolve usuarios "stub-*".
+  # O client aad-keycloak-admin (confidencial + service account com realm-management) vive no
+  # ConfigMap aad-keycloak-realm (import do Keycloak). ClientSecret aqui e o mesmo do realm (sim/dev).
+  Keycloak__KeycloakAdmin__Mode: "Real"
+  Keycloak__KeycloakAdmin__ClientId: "aad-keycloak-admin"
+  Keycloak__KeycloakAdmin__ClientSecret: "keycloak-admin-secret"
   Vault__Address: ""
   Temporal__Host: ""
   Kafka__BootstrapServers: ""
