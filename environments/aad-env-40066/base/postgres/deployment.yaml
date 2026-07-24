@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app.kubernetes.io/name: postgres
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: env-demo-restore-mrzegwyz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: env-demo-restore-mrzegwyz
+    spec:
+      initContainers:
+        - name: aad-restore
+          image: curlimages/curl:8.10.1
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - "curl -fsSL -o '/docker-entrypoint-initdb.d/demo.sql' 'https://gist.githubusercontent.com/flaviopchagas/917226499692afcd5b7dd0237645a944/raw/demo.sql'"
+          volumeMounts:
+            - name: aad-restore-data
+              mountPath: /docker-entrypoint-initdb.d
+        - name: aad-init
+          image: postgres:placeholder
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - "#!/bin/bash\necho \"No init script configured for postgres\""
+          envFrom:
+            - secretRef:
+                name: postgres-secrets
+                optional: true
+      containers:
+        - name: postgres
+          image: postgres:placeholder
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secrets
+                optional: true
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 125m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: aad-restore-data
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: aad-restore-data
+          emptyDir: {}
